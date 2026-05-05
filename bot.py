@@ -1,66 +1,57 @@
 import os
-from aiogram import Bot, Dispatcher, types
-from aiogram.utils import executor
+import asyncio
+from aiogram import Bot, Dispatcher, F
+from aiogram.types import Message
 
 TOKEN = os.getenv("BOT_TOKEN")
 
 bot = Bot(token=TOKEN)
-dp = Dispatcher(bot)
+dp = Dispatcher()
 
-# код -> список видео
 data = {}
+temp = {}
 
-# временное хранение при добавлении нового кода
-temp_storage = {}
-
-@dp.message_handler(commands=['start'])
-async def start(message: types.Message):
+@dp.message(F.text == "/start")
+async def start(message: Message):
     await message.answer("Отправь кодовое слово.")
 
-@dp.message_handler(commands=['add'])
-async def add(message: types.Message):
-    await message.answer("Напиши: /save код")
-
-@dp.message_handler(commands=['save'])
-async def save(message: types.Message):
+@dp.message(F.text.startswith("/save"))
+async def save(message: Message):
     parts = message.text.split()
 
     if len(parts) < 2:
-        await message.answer("Пример: /save secret123")
+        await message.answer("Пример: /save code123")
         return
 
     code = parts[1]
-    temp_storage[message.from_user.id] = {
-        "code": code,
-        "videos": []
-    }
+    temp[message.from_user.id] = {"code": code, "videos": []}
 
-    await message.answer("Теперь отправь 2 видео подряд.")
+    await message.answer("Отправь 2 видео подряд.")
 
-@dp.message_handler(content_types=types.ContentType.VIDEO)
-async def handle_video(message: types.Message):
-    user_id = message.from_user.id
+@dp.message(F.video)
+async def video(message: Message):
+    uid = message.from_user.id
 
-    if user_id in temp_storage:
-        temp_storage[user_id]["videos"].append(message.video.file_id)
+    if uid in temp:
+        temp[uid]["videos"].append(message.video.file_id)
 
-        if len(temp_storage[user_id]["videos"]) == 2:
-            code = temp_storage[user_id]["code"]
-            data[code] = temp_storage[user_id]["videos"]
+        if len(temp[uid]["videos"]) == 2:
+            data[temp[uid]["code"]] = temp[uid]["videos"]
+            del temp[uid]
+            await message.answer("Код сохранён.")
 
-            del temp_storage[user_id]
-
-            await message.answer(f"Код '{code}' сохранён.")
-
-@dp.message_handler()
-async def check_code(message: types.Message):
+@dp.message()
+async def check(message: Message):
     code = message.text.strip()
 
     if code in data:
-        for video_id in data[code]:
-            await message.answer_video(video_id)
+        for v in data[code]:
+            await message.answer_video(v)
     else:
         await message.answer("Неверный код.")
 
+async def main():
+    await dp.start_polling(bot)
+
 if name == "__main__":
-    executor.start_polling(dp)
+    asyncio.run(main())
